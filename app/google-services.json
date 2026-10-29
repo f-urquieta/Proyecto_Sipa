@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1053364187811",
+    "project_id": "sipa-3d974",
+    "storage_bucket": "sipa-3d974.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1053364187811:android:ddfd6e885925fe33404516",
+        "android_client_info": {
+          "package_name": "com.example.sipa"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1053364187811-dc1ks8uhls14qi43c3banipg0njfl2s5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrcpf1ZX9F3xyYpH663tER1FP84HAcsXo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1053364187811-dc1ks8uhls14qi43c3banipg0njfl2s5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
