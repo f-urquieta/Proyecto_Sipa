@@ -1,10 +1,12 @@
 package com.example.sipa.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.*
@@ -23,7 +25,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
-import android.widget.Toast
 
 data class Dispositivo(
     val id: String,
@@ -38,8 +39,10 @@ fun AddLightsScreen(navController: NavController) {
     val auth = FirebaseAuth.getInstance()
     val context = LocalContext.current
 
-    // ⚠️ Recuerda cambiar esto por el ID real de la casa
-    val houseId = "4826"
+    // Estado para obtener el houseId real
+    var houseId by remember { mutableStateOf<String?>(null) }
+    var cargandoHouseId by remember { mutableStateOf(true) }
+
     val MAX_LUCES = 6
 
     var buscando by remember { mutableStateOf(true) }
@@ -47,9 +50,25 @@ fun AddLightsScreen(navController: NavController) {
     var seleccionados by remember { mutableStateOf<Set<String>>(emptySet()) }
     var guardando by remember { mutableStateOf(false) }
 
-    // ✨ Estado para el diálogo del PIN
     var mostrarDialogoPin by remember { mutableStateOf(false) }
     var pinIngresado by remember { mutableStateOf("") }
+
+    // Obtener el houseId del usuario
+    LaunchedEffect(Unit) {
+        val uid = auth.currentUser?.uid
+        if (uid != null) {
+            db.collection("users").document(uid).get()
+                .addOnSuccessListener { document ->
+                    houseId = document.getString("houseId")
+                    cargandoHouseId = false
+                }
+                .addOnFailureListener {
+                    cargandoHouseId = false
+                }
+        } else {
+            cargandoHouseId = false
+        }
+    }
 
     // Simulamos la búsqueda de dispositivos WiFi
     LaunchedEffect(Unit) {
@@ -65,64 +84,71 @@ fun AddLightsScreen(navController: NavController) {
         buscando = false
     }
 
-    // ✨ Función que se ejecuta cuando el usuario confirma el PIN
     fun guardarLucesConPin(pin: String) {
+        val currentHouseId = houseId
+        if (currentHouseId == null) {
+            Toast.makeText(context, "Error: No se encontró la casa", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 🔥 NUEVO: Verificamos el PIN directamente aquí (PIN por defecto para luces)
+        val PIN_LUCES = "1234"
+
+        if (pin != PIN_LUCES) {
+            Toast.makeText(context, "PIN incorrecto. Usa 1234 para probar.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // Si el PIN es correcto, guardamos
         guardando = true
         val uid = auth.currentUser?.uid
-        val houseRef = db.collection("houses").document(houseId)
+        val houseRef = db.collection("houses").document(currentHouseId)
 
-        // Primero consultamos el PIN de la casa
-        houseRef.get().addOnSuccessListener { document ->
-            val pinCorrecto = document.getString("accessPin")
+        val lucesAGuardar = dispositivosEncontrados.filter { seleccionados.contains(it.id) }
 
-            if (pin == pinCorrecto) {
-                // PIN correcto: guardamos las luces
-                val lucesAGuardar = dispositivosEncontrados.filter { seleccionados.contains(it.id) }
+        db.runBatch { batch ->
+            lucesAGuardar.forEach { luz ->
+                val lightRef = houseRef.collection("lights").document(luz.id)
+                batch.set(lightRef, mapOf(
+                    "name" to luz.nombre,
+                    "room" to luz.ubicacion.substringBefore(" ·"),
+                    "isOn" to false,
+                    "brightness" to luz.intensidadDefecto,
+                    "scheduleOff" to "23:30",
+                    "scheduleOn" to "19:00",
+                    "addedAt" to FieldValue.serverTimestamp()
+                ))
 
-                db.runBatch { batch ->
-                    lucesAGuardar.forEach { luz ->
-                        val lightRef = houseRef.collection("lights").document(luz.id)
-                        batch.set(lightRef, mapOf(
-                            "name" to luz.nombre,
-                            "room" to luz.ubicacion.substringBefore(" ·"),
-                            "isOn" to false,
-                            "brightness" to luz.intensidadDefecto,
-                            "scheduleOff" to "23:30",
-                            "addedAt" to FieldValue.serverTimestamp()
-                        ))
-
-                        val historyRef = houseRef.collection("history").document()
-                        batch.set(historyRef, mapOf(
-                            "action" to "luz_vinculada",
-                            "lightName" to luz.nombre,
-                            "oldValue" to "",
-                            "newValue" to luz.nombre,
-                            "valueType" to "string",
-                            "timestamp" to FieldValue.serverTimestamp(),
-                            "performedBy" to uid
-                        ))
-                    }
-                }.addOnSuccessListener {
-                    guardando = false
-                    mostrarDialogoPin = false
-                    pinIngresado = ""
-                    Toast.makeText(context, "Luces conectadas con éxito", Toast.LENGTH_SHORT).show()
-                    navController.navigate("home") {
-                        popUpTo("add_lights") { inclusive = true }
-                    }
-                }.addOnFailureListener { e ->
-                    guardando = false
-                    Toast.makeText(context, "Error al conectar: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            } else {
-                // PIN incorrecto
-                guardando = false
-                Toast.makeText(context, "PIN incorrecto. Inténtalo de nuevo.", Toast.LENGTH_LONG).show()
+                val historyRef = houseRef.collection("history").document()
+                batch.set(historyRef, mapOf(
+                    "action" to "luz_vinculada",
+                    "lightId" to luz.id,
+                    "oldValue" to "",
+                    "newValue" to luz.nombre,
+                    "valueType" to "string",
+                    "timestamp" to FieldValue.serverTimestamp(),
+                    "performedBy" to uid
+                ))
+            }
+        }.addOnSuccessListener {
+            guardando = false
+            mostrarDialogoPin = false
+            pinIngresado = ""
+            Toast.makeText(context, "Luces conectadas con éxito", Toast.LENGTH_SHORT).show()
+            navController.navigate("home") {
+                popUpTo("add_lights") { inclusive = true }
             }
         }.addOnFailureListener { e ->
             guardando = false
-            Toast.makeText(context, "Error al verificar PIN: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Error al conectar: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    if (cargandoHouseId) {
+        Box(modifier = Modifier.fillMaxSize().background(SipaBackground), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = SipaGold)
+        }
+        return
     }
 
     // --- DIÁLOGO DEL PIN ---
@@ -140,7 +166,7 @@ fun AddLightsScreen(navController: NavController) {
             text = {
                 Column {
                     Text(
-                        "Ingresa el PIN de 4 dígitos de la casa para agregar las luces.",
+                        "Ingresa el PIN de 4 dígitos de la luz para emparejarla.",
                         fontSize = 14.sp,
                         color = SipaTextLight
                     )
@@ -148,13 +174,12 @@ fun AddLightsScreen(navController: NavController) {
                     OutlinedTextField(
                         value = pinIngresado,
                         onValueChange = {
-                            // Solo permitimos hasta 4 dígitos
                             if (it.length <= 4 && it.all { char -> char.isDigit() }) {
                                 pinIngresado = it
                             }
                         },
-                        label = { Text("PIN de la casa") },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        label = { Text("PIN de la luz") },
+                        keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.NumberPassword
                         ),
                         visualTransformation = PasswordVisualTransformation(),
@@ -169,10 +194,7 @@ fun AddLightsScreen(navController: NavController) {
                     colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
                 ) {
                     if (guardando) {
-                        CircularProgressIndicator(
-                            color = SipaWhite,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(20.dp))
                     } else {
                         Text("Confirmar", color = SipaWhite)
                     }
@@ -286,7 +308,6 @@ fun AddLightsScreen(navController: NavController) {
                     Toast.makeText(context, "Selecciona al menos una luz", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
-                // ✨ En lugar de guardar directamente, mostramos el diálogo del PIN
                 mostrarDialogoPin = true
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),

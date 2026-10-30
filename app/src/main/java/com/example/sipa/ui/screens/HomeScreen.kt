@@ -1,10 +1,11 @@
 package com.example.sipa.ui.screens
 
-
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
@@ -19,13 +20,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.sipa.ui.theme.*
-
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.grid.items
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 
 // Modelo de datos para una luz
 data class Luz(
@@ -41,56 +38,80 @@ data class Luz(
 fun HomeScreen(navController: NavController) {
     val db = FirebaseFirestore.getInstance()
     val auth = FirebaseAuth.getInstance()
-    // ⚠️ Cambia esto por el ID real de la casa. Por ahora usamos "4826" como ejemplo.
-    val houseId = "4826"
 
-    // Estado que se actualizará con el listener de Firestore (Etapa 3)
-    var luces by remember { mutableStateOf<List<Luz>>(emptyList()) }
-    var cargando by remember { mutableStateOf(true) }
+    // Estado para guardar el houseId del usuario
+    var houseId by remember { mutableStateOf<String?>(null) }
+    var cargandoHouseId by remember { mutableStateOf(true) }
 
-    // --- ETAPA 3: ESCUCHAR CAMBIOS EN TIEMPO REAL ---
-    // Este bloque se ejecuta una vez al entrar a la pantalla y se mantiene escuchando
-    LaunchedEffect(houseId) {
-        db.collection("houses").document(houseId)
-            .collection("lights")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    cargando = false
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    luces = snapshot.documents.map { doc ->
-                        Luz(
-                            id = doc.id,
-                            nombre = doc.getString("name") ?: "",
-                            habitacion = doc.getString("room") ?: "",
-                            encendida = doc.getBoolean("isOn") ?: false,
-                            intensidad = doc.getLong("brightness")?.toInt() ?: 0,
-                            horaApagado = doc.getString("scheduleOff") ?: ""
-                        )
+    // Obtener el houseId del usuario al entrar
+    LaunchedEffect(Unit) {
+        val uid = auth.currentUser?.uid
+        if (uid != null) {
+            db.collection("users").document(uid).get()
+                .addOnSuccessListener { document ->
+                    if (document.exists()) {
+                        houseId = document.getString("houseId")
                     }
-                    cargando = false
+                    cargandoHouseId = false
                 }
-            }
+                .addOnFailureListener {
+                    cargandoHouseId = false
+                }
+        } else {
+            cargandoHouseId = false
+        }
     }
 
-    // --- ETAPA 4: FUNCIÓN PARA ESCRIBIR CAMBIOS + HISTORIAL ---
-    // Esta función se llamará cuando el usuario toque el switch de una luz
+    // Estado que se actualizará con el listener de Firestore
+    var luces by remember { mutableStateOf<List<Luz>>(emptyList()) }
+    var cargandoLuces by remember { mutableStateOf(true) }
+
+    // Listener de las luces de la casa
+    LaunchedEffect(houseId) {
+        if (houseId != null) {
+            db.collection("houses").document(houseId!!)
+                .collection("lights")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        cargandoLuces = false
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        luces = snapshot.documents.map { doc ->
+                            Luz(
+                                id = doc.id,
+                                nombre = doc.getString("name") ?: "",
+                                habitacion = doc.getString("room") ?: "",
+                                encendida = doc.getBoolean("isOn") ?: false,
+                                intensidad = when (val valor = doc.get("brightness")) {
+                                    is Long -> valor.toInt()
+                                    is Int -> valor
+                                    is String -> valor.toIntOrNull() ?: 0
+                                    else -> 0
+                                },
+                                horaApagado = doc.getString("scheduleOff") ?: ""
+                            )
+                        }
+                        cargandoLuces = false
+                    }
+                }
+        }
+    }
+
+    // Función para encender/apagar (con historial)
     fun toggleLuz(luz: Luz) {
+        val currentHouseId = houseId ?: return
         val nuevoEstado = !luz.encendida
-        val houseRef = db.collection("houses").document(houseId)
+        val houseRef = db.collection("houses").document(currentHouseId)
         val lightRef = houseRef.collection("lights").document(luz.id)
 
-        // Usamos un batch para actualizar la luz Y guardar el historial al mismo tiempo
         db.runBatch { batch ->
-            // 1. Actualizar el estado de la luz
             batch.update(lightRef, mapOf(
                 "isOn" to nuevoEstado,
                 "lastUpdated" to FieldValue.serverTimestamp(),
                 "updatedBy" to auth.currentUser?.uid
             ))
 
-            // 2. Añadir un documento al historial
             val historyRef = houseRef.collection("history").document()
             batch.set(historyRef, mapOf(
                 "lightId" to luz.id,
@@ -101,7 +122,7 @@ fun HomeScreen(navController: NavController) {
                 "performedBy" to auth.currentUser?.uid
             ))
         }.addOnFailureListener {
-            // Aquí podrías mostrar un error al usuario
+            // Manejar error
         }
     }
 
@@ -112,7 +133,7 @@ fun HomeScreen(navController: NavController) {
             .background(SipaBackground)
             .padding(16.dp)
     ) {
-        // Header (sin cambios)
+        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -134,10 +155,14 @@ fun HomeScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Grid de luces (ahora usa la lista de Firestore)
-        if (cargando) {
+        // Estados de carga
+        if (cargandoHouseId || cargandoLuces) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = SipaGold)
+            }
+        } else if (houseId == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No se encontró una casa asociada a tu cuenta.", color = SipaTextLight)
             }
         } else {
             LazyVerticalGrid(
@@ -150,13 +175,14 @@ fun HomeScreen(navController: NavController) {
                     LightCard(
                         luz = luz,
                         onToggle = { toggleLuz(luz) },
-                        onClick = { navController.navigate("edit_schedule") }
+                        // 🔥 AQUÍ ESTÁ LA CORRECCIÓN: Pasamos el ID de la luz en la ruta
+                        onClick = { navController.navigate("edit_schedule/${luz.id}") }
                     )
                 }
             }
         }
 
-        // Bottom Navigation (sin cambios)
+        // Bottom Navigation
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = Arrangement.SpaceAround
@@ -200,7 +226,6 @@ fun LightCard(
                     contentDescription = null,
                     tint = if (luz.encendida) SipaGold else SipaTextLight
                 )
-                // Switch para encender/apagar (esto dispara la Etapa 4)
                 Switch(
                     checked = luz.encendida,
                     onCheckedChange = { onToggle() },
