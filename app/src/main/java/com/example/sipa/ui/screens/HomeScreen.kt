@@ -115,9 +115,10 @@ fun HomeScreen(navController: NavController) {
             val historyRef = houseRef.collection("history").document()
             batch.set(historyRef, mapOf(
                 "lightId" to luz.id,
+                "lightName" to luz.nombre, // 🔥 NUEVO: Guardamos el nombre de la luz
                 "action" to if (nuevoEstado) "encendido" else "apagado",
-                "oldValue" to luz.encendida,
-                "newValue" to nuevoEstado,
+                "oldValue" to if (luz.encendida) "Encendida" else "Apagada", // 🔥 Texto amigable
+                "newValue" to if (nuevoEstado) "Encendida" else "Apagada",   // 🔥 Texto amigable
                 "timestamp" to FieldValue.serverTimestamp(),
                 "performedBy" to auth.currentUser?.uid
             ))
@@ -191,9 +192,11 @@ fun HomeScreen(navController: NavController) {
                 Icon(Icons.Default.Home, contentDescription = "Mi casa", tint = SipaGold)
                 Text("Mi casa", fontSize = 12.sp, color = SipaGold)
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.DateRange, contentDescription = "Horarios", tint = SipaTextLight)
-                Text("Horarios", fontSize = 12.sp, color = SipaTextLight)
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { navController.navigate("history") } // 🔥 NUEVO: Navegar al historial
+            ) {
+                Icon(Icons.Default.DateRange, contentDescription = "Historial", tint = SipaTextLight)
+                Text("Historial", fontSize = 12.sp, color = SipaTextLight)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextLight)
