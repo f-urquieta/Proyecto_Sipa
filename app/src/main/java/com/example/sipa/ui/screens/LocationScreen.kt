@@ -237,7 +237,7 @@ fun LocationScreen(
                 }
 
                 guardandoCasa = true
-                val houseId = db.collection("houses").document().id // ID autogenerado
+                val houseId = db.collection("houses").document().id
 
                 val houseData = hashMapOf(
                     "name" to nombreCasa,
@@ -251,11 +251,23 @@ fun LocationScreen(
                 db.collection("houses").document(houseId)
                     .set(houseData)
                     .addOnSuccessListener {
-                        guardandoCasa = false
-                        // Navegar a add_lights y limpiar el backstack para que no vuelva a la creación
-                        navController.navigate("add_lights") {
-                            popUpTo("houses") { inclusive = true }
-                        }
+                        // 🔥 NUEVO: Ahora actualizamos el documento del usuario con su houseId
+                        db.collection("users").document(user.uid)
+                            .update("houseId", houseId)
+                            .addOnSuccessListener {
+                                guardandoCasa = false
+                                navController.navigate("add_lights") {
+                                    popUpTo("houses") { inclusive = true }
+                                }
+                            }
+                            .addOnFailureListener { e ->
+                                guardandoCasa = false
+                                Toast.makeText(context, "Casa creada, pero error al vincular usuario: ${e.message}", Toast.LENGTH_LONG).show()
+                                // Aún así navegamos, porque la casa se creó
+                                navController.navigate("add_lights") {
+                                    popUpTo("houses") { inclusive = true }
+                                }
+                            }
                     }
                     .addOnFailureListener { e ->
                         guardandoCasa = false
