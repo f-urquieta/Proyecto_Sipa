@@ -23,6 +23,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import android.util.Log
+import android.util.Patterns
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,11 +91,24 @@ fun RegisterScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
+
         Button(
             onClick = {
-                // Validación básica
+                // Validación de campos vacíos
                 if (nombre.isBlank() || correo.isBlank() || contrasena.isBlank()) {
                     Toast.makeText(context, "Por favor, rellena todos los campos", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                // Validación de formato de correo
+                if (!Patterns.EMAIL_ADDRESS.matcher(correo).matches()) {
+                    Toast.makeText(context, "El correo no tiene un formato válido (ej: usuario@dominio.com)", Toast.LENGTH_LONG).show()
+                    return@Button
+                }
+
+                // Validación de longitud de contraseña
+                if (contrasena.length < 6) {
+                    Toast.makeText(context, "La contraseña debe tener al menos 6 caracteres", Toast.LENGTH_LONG).show()
                     return@Button
                 }
 
@@ -157,6 +171,7 @@ fun RegisterScreen(navController: NavController) {
                 Text("Crear cuenta", color = SipaWhite)
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(horizontalArrangement = Arrangement.Center) {
@@ -172,6 +187,5 @@ fun RegisterScreen(navController: NavController) {
             textAlign = TextAlign.Center,
             color = SipaTextLight,
             fontSize = 12.sp
-        )
-    }
-}
+        )}}
+
