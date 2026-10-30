@@ -30,14 +30,26 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
+import java.util.TimeZone
 
-@OptIn(ExperimentalMaterial3Api::class)
+// 🔥 NUEVO: Imports de Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+
 @Composable
-fun LocationScreen(navController: NavController) {
+fun LocationScreen(
+    navController: NavController,
+    nombreCasa: String = "Mi casa" // 🔥 NUEVO: Recibimos el nombre de la casa
+) {
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
+
+    // 🔥 NUEVO: Instancias de Firebase
+    val auth = FirebaseAuth.getInstance()
+    val db = FirebaseFirestore.getInstance()
 
     // Estados
     var ciudad by remember { mutableStateOf("Madrid") }
@@ -48,6 +60,9 @@ fun LocationScreen(navController: NavController) {
     var horaAtardecer by remember { mutableStateOf("--:--") }
     var cargandoUbicacion by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    // 🔥 NUEVO: Estado para saber si estamos guardando en Firestore
+    var guardandoCasa by remember { mutableStateOf(false) }
 
     // Lanzador de permisos
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -64,17 +79,14 @@ fun LocationScreen(navController: NavController) {
                     cargandoUbicacion = true
                     scope.launch {
                         try {
-                            // 1. Obtener Zona Horaria con rtz
                             val tzData = obtenerZonaHorariaRtz(lat, lon)
                             zonaHoraria = tzData.first
                             horaActual = tzData.second
 
-                            // Obtener el offset UTC
                             val tz = TimeZone.getTimeZone(zonaHoraria)
                             val offset = tz.getOffset(System.currentTimeMillis()) / (1000 * 60 * 60)
                             offsetUtc = String.format("UTC%+03d:00", offset)
 
-                            // 2. Obtener Amanecer/Atardecer (Pasando la zona horaria)
                             val solData = obtenerHorarioSol(lat, lon, zonaHoraria)
                             horaAmanecer = solData.first
                             horaAtardecer = solData.second
@@ -113,7 +125,6 @@ fun LocationScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Botón para usar ubicación real
         Button(
             onClick = {
                 val hasFineLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -135,7 +146,6 @@ fun LocationScreen(navController: NavController) {
                                     val offset = tz.getOffset(System.currentTimeMillis()) / (1000 * 60 * 60)
                                     offsetUtc = String.format("UTC%+03d:00", offset)
 
-                                    // 2. Obtener Amanecer/Atardecer (Pasando la zona horaria)
                                     val solData = obtenerHorarioSol(lat, lon, zonaHoraria)
                                     horaAmanecer = solData.first
                                     horaAtardecer = solData.second
@@ -175,7 +185,6 @@ fun LocationScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tarjeta de Zona Horaria
         Card(
             colors = CardDefaults.cardColors(containerColor = SipaGoldLight),
             modifier = Modifier.fillMaxWidth()
@@ -191,7 +200,6 @@ fun LocationScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tarjeta de Sol
         Card(
             colors = CardDefaults.cardColors(containerColor = SipaWhite),
             modifier = Modifier.fillMaxWidth()
@@ -219,17 +227,55 @@ fun LocationScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.weight(1f))
 
+        // 🔥 NUEVO: Botón modificado para guardar en Firestore
         Button(
-            onClick = { navController.navigate("add_lights") },
+            onClick = {
+                val user = auth.currentUser
+                if (user == null) {
+                    Toast.makeText(context, "Error: No hay usuario logueado", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                guardandoCasa = true
+                val houseId = db.collection("houses").document().id // ID autogenerado
+
+                val houseData = hashMapOf(
+                    "name" to nombreCasa,
+                    "ownerUid" to user.uid,
+                    "location" to ciudad,
+                    "timezone" to zonaHoraria,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "members" to listOf(user.uid)
+                )
+
+                db.collection("houses").document(houseId)
+                    .set(houseData)
+                    .addOnSuccessListener {
+                        guardandoCasa = false
+                        // Navegar a add_lights y limpiar el backstack para que no vuelva a la creación
+                        navController.navigate("add_lights") {
+                            popUpTo("houses") { inclusive = true }
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        guardandoCasa = false
+                        Toast.makeText(context, "Error al guardar la casa: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+            },
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
+            colors = ButtonDefaults.buttonColors(containerColor = SipaGold),
+            enabled = !guardandoCasa // Deshabilitar mientras guarda
         ) {
-            Text("Confirmar ubicación", color = SipaWhite)
+            if (guardandoCasa) {
+                CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(24.dp))
+            } else {
+                Text("Confirmar ubicación", color = SipaWhite)
+            }
         }
     }
 }
 
-// --- FUNCIONES AUXILIARES ---
+// --- FUNCIONES AUXILIARES (sin cambios) ---
 
 @SuppressLint("MissingPermission")
 fun obtenerUbicacionYActualizar(
@@ -252,7 +298,6 @@ fun obtenerUbicacionYActualizar(
 }
 
 suspend fun obtenerZonaHorariaRtz(lat: Double, lng: Double): Pair<String, String> = withContext(Dispatchers.IO) {
-    // Usamos la API pública rtz (el orden es lng, lat)
     val url = "http://tz.twitchax.com/api/v1/osm/tz/$lng/$lat"
     val client = OkHttpClient()
     val request = Request.Builder().url(url).build()
@@ -261,25 +306,21 @@ suspend fun obtenerZonaHorariaRtz(lat: Double, lng: Double): Pair<String, String
         if (!response.isSuccessful) throw Exception("Error HTTP RTZ: ${response.code}")
         val body = response.body?.string() ?: throw Exception("Respuesta vacía")
 
-        // La respuesta es un JSON Array, extraemos el primer objeto
         val jsonArray = JSONArray(body)
         if (jsonArray.length() == 0) throw Exception("RTZ no devolvió datos")
 
         val json = jsonArray.getJSONObject(0)
-        val timeZoneId = json.getString("identifier") // Ej: "Europe/Madrid"
-        val currentTimeIso = json.getString("currentTime") // Ej: "2026-10-29T21:41:00+02:00"
+        val timeZoneId = json.getString("identifier")
+        val currentTimeIso = json.getString("currentTime")
 
-        // Extraer la hora local del ISO (tomamos los primeros 5 caracteres después de la 'T')
         val horaLocal = currentTimeIso.substringAfter("T").take(5)
 
         Pair(timeZoneId, horaLocal)
     }
 }
 
-// ✅ FUNCIÓN CORREGIDA: Ahora recibe la zona horaria y convierte la hora UTC a local
 suspend fun obtenerHorarioSol(lat: Double, lng: Double, zonaHorariaId: String): Pair<String, String> = withContext(Dispatchers.IO) {
     val client = OkHttpClient()
-    // Pedimos la hora en formato UTC (formatted=0) para evitar confusiones
     val url = "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lng&formatted=0"
     val request = Request.Builder().url(url).build()
 
@@ -289,18 +330,15 @@ suspend fun obtenerHorarioSol(lat: Double, lng: Double, zonaHorariaId: String): 
         val json = JSONObject(body)
 
         val results = json.getJSONObject("results")
-        val sunriseUtc = results.getString("sunrise") // Ej: "2026-10-29T14:30:00+00:00"
+        val sunriseUtc = results.getString("sunrise")
         val sunsetUtc = results.getString("sunset")
 
-        // 1. Formateador para leer la fecha UTC que devuelve la API
         val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
         parser.timeZone = TimeZone.getTimeZone("UTC")
 
-        // 2. Formateador para mostrar la hora en la zona horaria del usuario
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
         formatter.timeZone = TimeZone.getTimeZone(zonaHorariaId)
 
-        // 3. Convertir
         val fechaAmanecer = parser.parse(sunriseUtc)
         val fechaAtardecer = parser.parse(sunsetUtc)
 

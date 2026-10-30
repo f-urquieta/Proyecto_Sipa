@@ -51,7 +51,10 @@ fun SipaApp() {
         composable("login") { LoginScreen(navController) }
         composable("register") { RegisterScreen(navController) }
         composable("houses") { HousesScreen(navController) }
-        composable("location") { LocationScreen(navController) }
+        composable("location/{nombreCasa}") { backStackEntry ->
+            val nombreCasa = backStackEntry.arguments?.getString("nombreCasa") ?: "Mi casa"
+            LocationScreen(navController, nombreCasa)
+        }
         composable("add_lights") { AddLightsScreen(navController) }
         composable("edit_schedule") { EditScheduleScreen(navController) }
         composable("home") { HomeScreen(navController) }

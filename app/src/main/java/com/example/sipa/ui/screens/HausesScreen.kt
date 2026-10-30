@@ -56,7 +56,7 @@ fun HousesScreen(navController: NavController) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = { navController.navigate("location") },
+                    onClick = { navController.navigate("location/$nombreCasa") },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
                 ) {
