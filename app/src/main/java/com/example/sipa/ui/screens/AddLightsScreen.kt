@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.*
@@ -15,8 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -39,7 +36,6 @@ fun AddLightsScreen(navController: NavController) {
     val auth = FirebaseAuth.getInstance()
     val context = LocalContext.current
 
-    // Estado para obtener el houseId real
     var houseId by remember { mutableStateOf<String?>(null) }
     var cargandoHouseId by remember { mutableStateOf(true) }
 
@@ -49,9 +45,6 @@ fun AddLightsScreen(navController: NavController) {
     var dispositivosEncontrados by remember { mutableStateOf<List<Dispositivo>>(emptyList()) }
     var seleccionados by remember { mutableStateOf<Set<String>>(emptySet()) }
     var guardando by remember { mutableStateOf(false) }
-
-    var mostrarDialogoPin by remember { mutableStateOf(false) }
-    var pinIngresado by remember { mutableStateOf("") }
 
     // Obtener el houseId del usuario
     LaunchedEffect(Unit) {
@@ -84,22 +77,14 @@ fun AddLightsScreen(navController: NavController) {
         buscando = false
     }
 
-    fun guardarLucesConPin(pin: String) {
+    // 🔥 FUNCIÓN SIMPLIFICADA: Guardar directamente sin PIN
+    fun conectarLuces() {
         val currentHouseId = houseId
         if (currentHouseId == null) {
             Toast.makeText(context, "Error: No se encontró la casa", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // 🔥 NUEVO: Verificamos el PIN directamente aquí (PIN por defecto para luces)
-        val PIN_LUCES = "1234"
-
-        if (pin != PIN_LUCES) {
-            Toast.makeText(context, "PIN incorrecto. Usa 1234 para probar.", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // Si el PIN es correcto, guardamos
         guardando = true
         val uid = auth.currentUser?.uid
         val houseRef = db.collection("houses").document(currentHouseId)
@@ -123,6 +108,7 @@ fun AddLightsScreen(navController: NavController) {
                 batch.set(historyRef, mapOf(
                     "action" to "luz_vinculada",
                     "lightId" to luz.id,
+                    "lightName" to luz.nombre, // Guardamos el nombre aquí también
                     "oldValue" to "",
                     "newValue" to luz.nombre,
                     "valueType" to "string",
@@ -132,8 +118,6 @@ fun AddLightsScreen(navController: NavController) {
             }
         }.addOnSuccessListener {
             guardando = false
-            mostrarDialogoPin = false
-            pinIngresado = ""
             Toast.makeText(context, "Luces conectadas con éxito", Toast.LENGTH_SHORT).show()
             navController.navigate("home") {
                 popUpTo("add_lights") { inclusive = true }
@@ -149,69 +133,6 @@ fun AddLightsScreen(navController: NavController) {
             CircularProgressIndicator(color = SipaGold)
         }
         return
-    }
-
-    // --- DIÁLOGO DEL PIN ---
-    if (mostrarDialogoPin) {
-        AlertDialog(
-            onDismissRequest = {
-                if (!guardando) {
-                    mostrarDialogoPin = false
-                    pinIngresado = ""
-                }
-            },
-            title = {
-                Text("Verificación de seguridad", fontWeight = FontWeight.Bold, color = SipaTextDark)
-            },
-            text = {
-                Column {
-                    Text(
-                        "Ingresa el PIN de 4 dígitos de la luz para emparejarla.",
-                        fontSize = 14.sp,
-                        color = SipaTextLight
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = pinIngresado,
-                        onValueChange = {
-                            if (it.length <= 4 && it.all { char -> char.isDigit() }) {
-                                pinIngresado = it
-                            }
-                        },
-                        label = { Text("PIN de la luz") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.NumberPassword
-                        ),
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { guardarLucesConPin(pinIngresado) },
-                    enabled = pinIngresado.length == 4 && !guardando,
-                    colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
-                ) {
-                    if (guardando) {
-                        CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(20.dp))
-                    } else {
-                        Text("Confirmar", color = SipaWhite)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        mostrarDialogoPin = false
-                        pinIngresado = ""
-                    },
-                    enabled = !guardando
-                ) {
-                    Text("Cancelar", color = SipaTextLight)
-                }
-            }
-        )
     }
 
     // --- INTERFAZ PRINCIPAL ---
@@ -302,24 +223,29 @@ fun AddLightsScreen(navController: NavController) {
             }
         }
 
+        // 🔥 BOTÓN SIMPLIFICADO: Llama directamente a conectarLuces()
         Button(
             onClick = {
                 if (seleccionados.isEmpty()) {
                     Toast.makeText(context, "Selecciona al menos una luz", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
-                mostrarDialogoPin = true
+                conectarLuces()
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             colors = ButtonDefaults.buttonColors(containerColor = SipaGold),
             enabled = !guardando && !buscando
         ) {
-            val textoBoton = if (seleccionados.isEmpty()) {
-                "+ Conectar luces a Mi casa"
+            if (guardando) {
+                CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(24.dp))
             } else {
-                "+ Conectar ${seleccionados.size} luces a Mi casa"
+                val textoBoton = if (seleccionados.isEmpty()) {
+                    "+ Conectar luces a Mi casa"
+                } else {
+                    "+ Conectar ${seleccionados.size} luces a Mi casa"
+                }
+                Text(textoBoton, color = SipaWhite)
             }
-            Text(textoBoton, color = SipaWhite)
         }
     }
 }
