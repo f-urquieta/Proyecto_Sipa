@@ -239,11 +239,14 @@ fun LocationScreen(
                 guardandoCasa = true
                 val houseId = db.collection("houses").document().id
 
+                val pinAleatorio = (1000..9999).random().toString() // Genera un código de 4 dígitos
+
                 val houseData = hashMapOf(
                     "name" to nombreCasa,
                     "ownerUid" to user.uid,
                     "location" to ciudad,
                     "timezone" to zonaHoraria,
+                    "shortCode" to pinAleatorio, // 🔥 NUEVO: Guardamos el código corto
                     "createdAt" to FieldValue.serverTimestamp(),
                     "members" to listOf(user.uid)
                 )

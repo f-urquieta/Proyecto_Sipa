@@ -1,6 +1,6 @@
 package com.example.sipa.ui.screens
 
-
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -8,21 +8,32 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.sipa.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun HousesScreen(navController: NavController) {
+    val db = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val context = LocalContext.current
+
     var nombreCasa by remember { mutableStateOf("Mi nueva casa") }
     var codigoInvitacion by remember { mutableStateOf("") }
+
+    // 🔥 Nuevos estados para manejar la carga
+    var uniendoCasa by remember { mutableStateOf(false) }
+    var creandoCasa by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -37,7 +48,7 @@ fun HousesScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Tarjeta Crear Casa
+        // --- TARJETA CREAR CASA ---
         Card(
             colors = CardDefaults.cardColors(containerColor = SipaWhite),
             modifier = Modifier.fillMaxWidth()
@@ -58,7 +69,8 @@ fun HousesScreen(navController: NavController) {
                 Button(
                     onClick = { navController.navigate("location/$nombreCasa") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
+                    colors = ButtonDefaults.buttonColors(containerColor = SipaGold),
+                    enabled = !creandoCasa && !uniendoCasa
                 ) {
                     Text("Crear casa", color = SipaWhite)
                 }
@@ -67,7 +79,7 @@ fun HousesScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Tarjeta Unirme a Casa
+        // --- TARJETA UNIRME A CASA ---
         Card(
             colors = CardDefaults.cardColors(containerColor = SipaWhite),
             modifier = Modifier.fillMaxWidth()
@@ -75,36 +87,90 @@ fun HousesScreen(navController: NavController) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Icon(Icons.Default.Key, contentDescription = null, tint = SipaGold)
                 Text("Unirme a una casa", fontWeight = FontWeight.Bold, color = SipaTextDark)
-                Text("Código compartido por el dueño SIPA · 4826", color = SipaTextLight, fontSize = 12.sp)
+                Text("Ingresa el código compartido por el dueño", color = SipaTextLight, fontSize = 12.sp)
 
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = codigoInvitacion,
                     onValueChange = { codigoInvitacion = it },
-                    label = { Text("Código de invitación") },
+                    label = { Text("Código de la casa") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = { /* Simulamos solicitud enviada */ },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = SipaGold)
+                    onClick = {
+                        if (codigoInvitacion.isBlank()) {
+                            Toast.makeText(context, "Ingresa un código válido", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        val uid = auth.currentUser?.uid
+                        if (uid == null) return@Button
+
+                        uniendoCasa = true
+
+                        // 🔥 NUEVO: Buscamos la casa por el shortCode
+                        db.collection("houses")
+                            .whereEqualTo("shortCode", codigoInvitacion.trim())
+                            .limit(1)
+                            .get()
+                            .addOnSuccessListener { querySnapshot ->
+                                if (!querySnapshot.isEmpty) {
+                                    val document = querySnapshot.documents[0]
+                                    val realHouseId = document.id // Este es el ID real del documento
+
+                                    // 1. Añadir el UID al array "members" de la casa
+                                    db.collection("houses").document(realHouseId)
+                                        .update("members", FieldValue.arrayUnion(uid))
+                                        .addOnSuccessListener {
+                                            // 2. Actualizar el documento del usuario con el nuevo houseId
+                                            db.collection("users").document(uid)
+                                                .update("houseId", realHouseId)
+                                                .addOnSuccessListener {
+                                                    // 3. Registrar en el historial
+                                                    val historyRef = db.collection("houses").document(realHouseId)
+                                                        .collection("history").document()
+                                                    historyRef.set(mapOf(
+                                                        "action" to "usuario_unido",
+                                                        "newValue" to (auth.currentUser?.email ?: "Nuevo miembro"),
+                                                        "timestamp" to FieldValue.serverTimestamp(),
+                                                        "performedBy" to uid
+                                                    ))
+
+                                                    uniendoCasa = false
+                                                    Toast.makeText(context, "¡Te has unido a la casa!", Toast.LENGTH_SHORT).show()
+
+                                                    navController.navigate("home") {
+                                                        popUpTo("houses") { inclusive = true }
+                                                    }
+                                                }
+                                                .addOnFailureListener { e ->
+                                                    uniendoCasa = false
+                                                    Toast.makeText(context, "Error al actualizar perfil: ${e.message}", Toast.LENGTH_LONG).show()
+                                                }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            uniendoCasa = false
+                                            Toast.makeText(context, "Error al unirse: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                } else {
+                                    uniendoCasa = false
+                                    Toast.makeText(context, "Código incorrecto. Esa casa no existe.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            .addOnFailureListener { e ->
+                                uniendoCasa = false
+                                Toast.makeText(context, "Error de red: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                    },
+                    // ... resto del botón
                 ) {
-                    Text("Enviar solicitud de acceso", color = SipaWhite)
+                    if (uniendoCasa) {
+                        CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("Enviar solicitud de acceso", color = SipaWhite)
+                    }
                 }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text("Tu solicitud pendiente", fontWeight = FontWeight.Bold, color = SipaTextDark)
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Schedule, contentDescription = null, tint = SipaGold)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text("Casa de la sierra", fontWeight = FontWeight.Bold, color = SipaTextDark)
-                Text("Pendiente de aprobación · Enviada hoy", color = SipaTextLight, fontSize = 12.sp)
             }
         }
     }

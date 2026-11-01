@@ -193,12 +193,14 @@ fun HomeScreen(navController: NavController) {
                 Text("Mi casa", fontSize = 12.sp, color = SipaGold)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { navController.navigate("history") } // 🔥 NUEVO: Navegar al historial
+                modifier = Modifier.clickable { navController.navigate("history") }
             ) {
                 Icon(Icons.Default.DateRange, contentDescription = "Historial", tint = SipaTextLight)
                 Text("Historial", fontSize = 12.sp, color = SipaTextLight)
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { navController.navigate("settings") }
+            ) {
                 Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextLight)
                 Text("Ajustes", fontSize = 12.sp, color = SipaTextLight)
             }
