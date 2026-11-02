@@ -35,6 +35,7 @@ fun RegisterScreen(navController: NavController) {
     var nombre by remember { mutableStateOf("") }
     var correo by remember { mutableStateOf("") }
     var contrasena by remember { mutableStateOf("") }
+    var confirmarContrasena by remember { mutableStateOf("") }
     var telefono by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
@@ -82,6 +83,25 @@ fun RegisterScreen(navController: NavController) {
         )
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedTextField(
+            value = confirmarContrasena,
+            onValueChange = { confirmarContrasena = it },
+            label = { Text("Confirmar contraseña") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+            isError = confirmarContrasena.isNotEmpty() && confirmarContrasena != contrasena
+        )
+        if (confirmarContrasena.isNotEmpty() && confirmarContrasena != contrasena) {
+            Text(
+                text = "Las contraseñas no coinciden",
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, top = 4.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedTextField(
             value = telefono,
             onValueChange = { telefono = it },
             label = { Text("Teléfono") },
@@ -95,7 +115,7 @@ fun RegisterScreen(navController: NavController) {
         Button(
             onClick = {
                 // Validación de campos vacíos
-                if (nombre.isBlank() || correo.isBlank() || contrasena.isBlank()) {
+                if (nombre.isBlank() || correo.isBlank() || contrasena.isBlank() || confirmarContrasena.isBlank()) {
                     Toast.makeText(context, "Por favor, rellena todos los campos", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
@@ -109,6 +129,12 @@ fun RegisterScreen(navController: NavController) {
                 // Validación de longitud de contraseña
                 if (contrasena.length < 6) {
                     Toast.makeText(context, "La contraseña debe tener al menos 6 caracteres", Toast.LENGTH_LONG).show()
+                    return@Button
+                }
+
+                // Validación de que las contraseñas coincidan
+                if (contrasena != confirmarContrasena) {
+                    Toast.makeText(context, "Las contraseñas no coinciden", Toast.LENGTH_LONG).show()
                     return@Button
                 }
 
@@ -187,5 +213,6 @@ fun RegisterScreen(navController: NavController) {
             textAlign = TextAlign.Center,
             color = SipaTextLight,
             fontSize = 12.sp
-        )}}
-
+        )
+    }
+}

@@ -35,8 +35,7 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
     var cargando by remember { mutableStateOf(true) }
     var guardando by remember { mutableStateOf(false) }
 
-    // 🔥 NUEVO: Estado para los días de la semana seleccionados
-    // Por defecto, todos los días están seleccionados
+    // Estado para los días de la semana seleccionados
     var diasSeleccionados by remember { mutableStateOf(listOf("L", "M", "X", "J", "V", "S", "D")) }
     val todosLosDias = listOf("L", "M", "X", "J", "V", "S", "D")
 
@@ -75,7 +74,6 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
                             is String -> valor.toIntOrNull() ?: 70
                             else -> 70
                         }
-                        // 🔥 NUEVO: Leer los días guardados en Firestore
                         val diasGuardados = doc.get("repeatDays") as? List<*>
                         if (diasGuardados != null) {
                             diasSeleccionados = diasGuardados.mapNotNull { it as? String }
@@ -184,7 +182,7 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
         Text("Repetir", fontWeight = FontWeight.Bold, color = SipaTextDark)
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 🔥 NUEVO: Días seleccionables
+        // Días seleccionables
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             todosLosDias.forEach { dia ->
                 val isSelected = diasSeleccionados.contains(dia)
@@ -195,7 +193,6 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
                             shape = CircleShape
                         )
                         .clickable {
-                            // Lógica para añadir o quitar el día de la lista
                             diasSeleccionados = if (isSelected) {
                                 diasSeleccionados - dia
                             } else {
@@ -217,6 +214,29 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
         Text("Tu intensidad actual", fontWeight = FontWeight.Bold, color = SipaTextDark)
         Text("$intensidad % al encender", fontSize = 12.sp, color = SipaTextLight)
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 🔥 NUEVO: Slider para controlar la intensidad
+        Slider(
+            value = intensidad.toFloat(),
+            onValueChange = { intensidad = it.toInt() },
+            valueRange = 0f..100f,
+            steps = 19,
+            colors = SliderDefaults.colors(
+                thumbColor = SipaGold,
+                activeTrackColor = SipaGold,
+                inactiveTrackColor = SipaGoldLight
+            )
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("0%", fontSize = 12.sp, color = SipaTextLight)
+            Text("$intensidad %", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = SipaTextDark)
+            Text("100%", fontSize = 12.sp, color = SipaTextLight)
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -236,7 +256,8 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
                         batch.update(lightRef, mapOf(
                             "scheduleOn" to horaEncendido,
                             "scheduleOff" to horaApagado,
-                            "repeatDays" to diasSeleccionados, // 🔥 NUEVO: Guardamos los días
+                            "repeatDays" to diasSeleccionados,
+                            "brightness" to intensidad, // 🔥 NUEVO: Guardamos la intensidad
                             "lastUpdated" to FieldValue.serverTimestamp(),
                             "updatedBy" to auth.currentUser?.uid
                         ))
@@ -245,7 +266,7 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
                         batch.set(historyRef, mapOf(
                             "lightId" to lightId,
                             "action" to "horario_modificado",
-                            "newValue" to "Encendido: $horaEncendido, Apagado: $horaApagado, Días: ${diasSeleccionados.joinToString(",")}",
+                            "newValue" to "Encendido: $horaEncendido, Apagado: $horaApagado, Días: ${diasSeleccionados.joinToString(",")}, Intensidad: $intensidad%",
                             "timestamp" to FieldValue.serverTimestamp(),
                             "performedBy" to auth.currentUser?.uid
                         ))
@@ -257,7 +278,7 @@ fun EditScheduleScreen(navController: NavController, lightId: String) {
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = SipaGold),
-                enabled = !guardando && diasSeleccionados.isNotEmpty() // No permitir guardar si no hay días
+                enabled = !guardando && diasSeleccionados.isNotEmpty()
             ) {
                 if (guardando) {
                     CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(24.dp))

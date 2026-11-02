@@ -115,10 +115,40 @@ fun HomeScreen(navController: NavController) {
             val historyRef = houseRef.collection("history").document()
             batch.set(historyRef, mapOf(
                 "lightId" to luz.id,
-                "lightName" to luz.nombre, // 🔥 NUEVO: Guardamos el nombre de la luz
+                "lightName" to luz.nombre,
                 "action" to if (nuevoEstado) "encendido" else "apagado",
-                "oldValue" to if (luz.encendida) "Encendida" else "Apagada", // 🔥 Texto amigable
-                "newValue" to if (nuevoEstado) "Encendida" else "Apagada",   // 🔥 Texto amigable
+                "oldValue" to if (luz.encendida) "Encendida" else "Apagada",
+                "newValue" to if (nuevoEstado) "Encendida" else "Apagada",
+                "timestamp" to FieldValue.serverTimestamp(),
+                "performedBy" to auth.currentUser?.uid
+            ))
+        }.addOnFailureListener {
+            // Manejar error
+        }
+    }
+
+    // 🔥 NUEVO: Función para actualizar la intensidad (con historial)
+    fun updateIntensidad(luz: Luz, nuevaIntensidad: Int) {
+        val currentHouseId = houseId ?: return
+        if (nuevaIntensidad == luz.intensidad) return
+
+        val houseRef = db.collection("houses").document(currentHouseId)
+        val lightRef = houseRef.collection("lights").document(luz.id)
+
+        db.runBatch { batch ->
+            batch.update(lightRef, mapOf(
+                "brightness" to nuevaIntensidad,
+                "lastUpdated" to FieldValue.serverTimestamp(),
+                "updatedBy" to auth.currentUser?.uid
+            ))
+
+            val historyRef = houseRef.collection("history").document()
+            batch.set(historyRef, mapOf(
+                "lightId" to luz.id,
+                "lightName" to luz.nombre,
+                "action" to "intensidad_cambiada",
+                "oldValue" to "${luz.intensidad}%",
+                "newValue" to "${nuevaIntensidad}%",
                 "timestamp" to FieldValue.serverTimestamp(),
                 "performedBy" to auth.currentUser?.uid
             ))
@@ -176,7 +206,7 @@ fun HomeScreen(navController: NavController) {
                     LightCard(
                         luz = luz,
                         onToggle = { toggleLuz(luz) },
-                        // 🔥 AQUÍ ESTÁ LA CORRECCIÓN: Pasamos el ID de la luz en la ruta
+                        onIntensidadChange = { nueva -> updateIntensidad(luz, nueva) }, // 🔥 NUEVO
                         onClick = { navController.navigate("edit_schedule/${luz.id}") }
                     )
                 }
@@ -212,6 +242,7 @@ fun HomeScreen(navController: NavController) {
 fun LightCard(
     luz: Luz,
     onToggle: () -> Unit,
+    onIntensidadChange: (Int) -> Unit, // 🔥 NUEVO
     onClick: () -> Unit
 ) {
     Card(
@@ -256,6 +287,23 @@ fun LightCard(
                 color = SipaGold,
                 trackColor = SipaWhite
             )
+
+            // 🔥 NUEVO: Slider para controlar la intensidad desde el Home
+            if (luz.encendida) {
+                Slider(
+                    value = luz.intensidad.toFloat(),
+                    onValueChange = { onIntensidadChange(it.toInt()) },
+                    valueRange = 0f..100f,
+                    steps = 19,
+                    modifier = Modifier.height(32.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = SipaGold,
+                        activeTrackColor = SipaGold,
+                        inactiveTrackColor = SipaWhite
+                    )
+                )
+            }
+
             Text(luz.horaApagado, fontSize = 12.sp, color = SipaTextLight)
         }
     }
