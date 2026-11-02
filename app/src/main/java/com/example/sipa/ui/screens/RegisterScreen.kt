@@ -1,6 +1,7 @@
 package com.example.sipa.ui.screens
 
-import android.widget.Toast
+import android.util.Log
+import android.util.Patterns
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,10 +21,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.sipa.ui.theme.*
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
-import android.util.Log
-import android.util.Patterns
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,12 +34,20 @@ fun RegisterScreen(navController: NavController) {
     val db = FirebaseFirestore.getInstance()
     val context = LocalContext.current
 
+    // Estados de los campos
     var nombre by remember { mutableStateOf("") }
     var correo by remember { mutableStateOf("") }
     var contrasena by remember { mutableStateOf("") }
     var confirmarContrasena by remember { mutableStateOf("") }
     var telefono by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+
+    // 🔥 NUEVO: Estados para los errores visuales en línea
+    var nombreError by remember { mutableStateOf<String?>(null) }
+    var correoError by remember { mutableStateOf<String?>(null) }
+    var contrasenaError by remember { mutableStateOf<String?>(null) }
+    var confirmarError by remember { mutableStateOf<String?>(null) }
+    var mensajeErrorGeneral by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -59,48 +69,67 @@ fun RegisterScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
+        // 🔥 Campo Nombre
         OutlinedTextField(
             value = nombre,
-            onValueChange = { nombre = it },
+            onValueChange = {
+                nombre = it
+                nombreError = null // Limpia el error al escribir
+            },
             label = { Text("Nombre") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            isError = nombreError != null,
+            supportingText = { if (nombreError != null) Text(nombreError!!) }
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 🔥 Campo Correo
         OutlinedTextField(
             value = correo,
-            onValueChange = { correo = it },
+            onValueChange = {
+                correo = it
+                correoError = null
+                mensajeErrorGeneral = null
+            },
             label = { Text("Correo") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            isError = correoError != null,
+            supportingText = { if (correoError != null) Text(correoError!!) }
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 🔥 Campo Contraseña
         OutlinedTextField(
             value = contrasena,
-            onValueChange = { contrasena = it },
+            onValueChange = {
+                contrasena = it
+                contrasenaError = null
+            },
             label = { Text("Contraseña") },
             visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            isError = contrasenaError != null,
+            supportingText = { if (contrasenaError != null) Text(contrasenaError!!) }
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 🔥 Campo Confirmar Contraseña (Con validación en línea automática)
         OutlinedTextField(
             value = confirmarContrasena,
-            onValueChange = { confirmarContrasena = it },
+            onValueChange = {
+                confirmarContrasena = it
+                confirmarError = null
+            },
             label = { Text("Confirmar contraseña") },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth(),
-            isError = confirmarContrasena.isNotEmpty() && confirmarContrasena != contrasena
+            isError = confirmarError != null,
+            supportingText = { if (confirmarError != null) Text(confirmarError!!) }
         )
-        if (confirmarContrasena.isNotEmpty() && confirmarContrasena != contrasena) {
-            Text(
-                text = "Las contraseñas no coinciden",
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 4.dp, top = 4.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 🔥 Campo Teléfono
         OutlinedTextField(
             value = telefono,
             onValueChange = { telefono = it },
@@ -109,81 +138,87 @@ fun RegisterScreen(navController: NavController) {
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        // 🔥 Mensaje de error general (Ej. Correo ya registrado, error de red)
+        if (mensajeErrorGeneral != null) {
+            Text(
+                text = mensajeErrorGeneral!!,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                fontWeight = FontWeight.Bold
+            )
+        }
 
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
-                // Validación de campos vacíos
-                if (nombre.isBlank() || correo.isBlank() || contrasena.isBlank() || confirmarContrasena.isBlank()) {
-                    Toast.makeText(context, "Por favor, rellena todos los campos", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
+                // Validaciones locales (asignando a los estados de error)
+                nombreError = if (nombre.isBlank()) "El nombre es obligatorio" else null
+                correoError = if (correo.isBlank()) {
+                    "El correo es obligatorio"
+                } else if (!Patterns.EMAIL_ADDRESS.matcher(correo).matches()) {
+                    "Ingresa un correo válido (ej: usuario@dominio.com)"
+                } else null
 
-                // Validación de formato de correo
-                if (!Patterns.EMAIL_ADDRESS.matcher(correo).matches()) {
-                    Toast.makeText(context, "El correo no tiene un formato válido (ej: usuario@dominio.com)", Toast.LENGTH_LONG).show()
-                    return@Button
-                }
+                contrasenaError = if (contrasena.isBlank()) {
+                    "La contraseña es obligatoria"
+                } else if (contrasena.length < 6) {
+                    "Debe tener al menos 6 caracteres"
+                } else null
 
-                // Validación de longitud de contraseña
-                if (contrasena.length < 6) {
-                    Toast.makeText(context, "La contraseña debe tener al menos 6 caracteres", Toast.LENGTH_LONG).show()
-                    return@Button
-                }
+                confirmarError = if (confirmarContrasena.isBlank()) {
+                    "Confirma tu contraseña"
+                } else if (contrasena != confirmarContrasena) {
+                    "Las contraseñas no coinciden"
+                } else null
 
-                // Validación de que las contraseñas coincidan
-                if (contrasena != confirmarContrasena) {
-                    Toast.makeText(context, "Las contraseñas no coinciden", Toast.LENGTH_LONG).show()
+                // Si hay algún error en los campos, detenemos la ejecución
+                if (nombreError != null || correoError != null || contrasenaError != null || confirmarError != null) {
                     return@Button
                 }
 
                 isLoading = true
+                mensajeErrorGeneral = null
                 Log.d("REGISTER_DEBUG", "Iniciando creación de usuario...")
 
-                auth.createUserWithEmailAndPassword(correo, contrasena)
+                auth.createUserWithEmailAndPassword(correo.trim(), contrasena)
                     .addOnCompleteListener { task ->
                         if (task.isSuccessful) {
-                            Log.d("REGISTER_DEBUG", "Usuario creado en Auth exitosamente")
-                            val user = auth.currentUser
-                            val uid = user?.uid
-
+                            val uid = auth.currentUser?.uid
                             if (uid != null) {
                                 val userData = hashMapOf(
                                     "nombre" to nombre,
-                                    "correo" to correo,
+                                    "correo" to correo.trim(),
                                     "telefono" to telefono,
                                     "uid" to uid
                                 )
-                                Log.d("REGISTER_DEBUG", "Intentando guardar en Firestore para UID: $uid")
 
                                 db.collection("users").document(uid).set(userData)
                                     .addOnSuccessListener {
-                                        Log.d("REGISTER_DEBUG", "Perfil guardado en Firestore exitosamente")
                                         isLoading = false
-                                        try {
-                                            navController.navigate("houses") {
-                                                popUpTo("register") { inclusive = true }
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e("REGISTER_DEBUG", "Error al navegar: ${e.message}", e)
-                                            Toast.makeText(context, "Error al navegar: ${e.message}", Toast.LENGTH_LONG).show()
+                                        navController.navigate("houses") {
+                                            popUpTo("register") { inclusive = true }
                                         }
                                     }
                                     .addOnFailureListener { e ->
-                                        Log.e("REGISTER_DEBUG", "Error al guardar perfil en Firestore: ${e.message}", e)
                                         isLoading = false
-                                        Toast.makeText(context, "Error al guardar perfil: ${e.message}", Toast.LENGTH_LONG).show()
+                                        mensajeErrorGeneral = "Error al guardar perfil: ${e.message}"
                                     }
                             } else {
-                                Log.e("REGISTER_DEBUG", "UID es null, no se puede guardar en Firestore")
                                 isLoading = false
-                                Toast.makeText(context, "Error: UID no disponible", Toast.LENGTH_LONG).show()
+                                mensajeErrorGeneral = "Error: UID no disponible"
                             }
                         } else {
-                            Log.e("REGISTER_DEBUG", "Error en Auth: ${task.exception?.message}", task.exception)
                             isLoading = false
-                            Toast.makeText(context, "Error: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                            // 🔥 Traducir los errores de Firebase a mensajes amigables
+                            val exception = task.exception
+                            mensajeErrorGeneral = when (exception) {
+                                is FirebaseAuthUserCollisionException -> "Este correo ya está registrado. Intenta iniciar sesión."
+                                is FirebaseAuthWeakPasswordException -> "La contraseña es muy débil."
+                                is FirebaseNetworkException -> "Error de conexión. Revisa tu internet."
+                                else -> "Error: ${exception?.message}"
+                            }
                         }
                     }
             },

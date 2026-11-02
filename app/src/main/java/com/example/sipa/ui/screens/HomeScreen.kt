@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add // 🔥 NUEVO IMPORT
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
@@ -24,7 +25,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 
-// Modelo de datos para una luz
 data class Luz(
     val id: String = "",
     val nombre: String = "",
@@ -39,11 +39,9 @@ fun HomeScreen(navController: NavController) {
     val db = FirebaseFirestore.getInstance()
     val auth = FirebaseAuth.getInstance()
 
-    // Estado para guardar el houseId del usuario
     var houseId by remember { mutableStateOf<String?>(null) }
     var cargandoHouseId by remember { mutableStateOf(true) }
 
-    // Obtener el houseId del usuario al entrar
     LaunchedEffect(Unit) {
         val uid = auth.currentUser?.uid
         if (uid != null) {
@@ -62,11 +60,9 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    // Estado que se actualizará con el listener de Firestore
     var luces by remember { mutableStateOf<List<Luz>>(emptyList()) }
     var cargandoLuces by remember { mutableStateOf(true) }
 
-    // Listener de las luces de la casa
     LaunchedEffect(houseId) {
         if (houseId != null) {
             db.collection("houses").document(houseId!!)
@@ -98,7 +94,6 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    // Función para encender/apagar (con historial)
     fun toggleLuz(luz: Luz) {
         val currentHouseId = houseId ?: return
         val nuevoEstado = !luz.encendida
@@ -122,12 +117,9 @@ fun HomeScreen(navController: NavController) {
                 "timestamp" to FieldValue.serverTimestamp(),
                 "performedBy" to auth.currentUser?.uid
             ))
-        }.addOnFailureListener {
-            // Manejar error
         }
     }
 
-    // 🔥 NUEVO: Función para actualizar la intensidad (con historial)
     fun updateIntensidad(luz: Luz, nuevaIntensidad: Int) {
         val currentHouseId = houseId ?: return
         if (nuevaIntensidad == luz.intensidad) return
@@ -152,88 +144,100 @@ fun HomeScreen(navController: NavController) {
                 "timestamp" to FieldValue.serverTimestamp(),
                 "performedBy" to auth.currentUser?.uid
             ))
-        }.addOnFailureListener {
-            // Manejar error
         }
     }
 
-    // --- INTERFAZ DE USUARIO ---
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SipaBackground)
-            .padding(16.dp)
-    ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    // 🔥 NUEVO: Envolvemos todo en un Box para poder usar el FAB
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(SipaBackground)
+                .padding(16.dp)
         ) {
-            Column {
-                Text("Mi casa", fontWeight = FontWeight.Bold, color = SipaTextDark)
-                Text("Madrid · Europe/Madrid · UTC+02:00", color = SipaTextLight, fontSize = 12.sp)
-            }
-            Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextDark)
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val encendidas = luces.count { it.encendida }
-        Text("Buenas noches", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = SipaTextDark)
-        Text("$encendidas luces encendidas", color = SipaGold, fontWeight = FontWeight.Bold)
-        Text("${luces.size - encendidas} luces apagadas", color = SipaTextLight, fontSize = 12.sp)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Estados de carga
-        if (cargandoHouseId || cargandoLuces) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = SipaGold)
-            }
-        } else if (houseId == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No se encontró una casa asociada a tu cuenta.", color = SipaTextLight)
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(luces) { luz ->
-                    LightCard(
-                        luz = luz,
-                        onToggle = { toggleLuz(luz) },
-                        onIntensidadChange = { nueva -> updateIntensidad(luz, nueva) }, // 🔥 NUEVO
-                        onClick = { navController.navigate("edit_schedule/${luz.id}") }
-                    )
+                Column {
+                    Text("Mi casa", fontWeight = FontWeight.Bold, color = SipaTextDark)
+                    Text("Madrid · Europe/Madrid · UTC+02:00", color = SipaTextLight, fontSize = 12.sp)
+                }
+                Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextDark)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val encendidas = luces.count { it.encendida }
+            Text("Buenas noches", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = SipaTextDark)
+            Text("$encendidas luces encendidas", color = SipaGold, fontWeight = FontWeight.Bold)
+            Text("${luces.size - encendidas} luces apagadas", color = SipaTextLight, fontSize = 12.sp)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (cargandoHouseId || cargandoLuces) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = SipaGold)
+                }
+            } else if (houseId == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No se encontró una casa asociada a tu cuenta.", color = SipaTextLight)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp) // 🔥 Evita que el FAB tape la última luz
+                ) {
+                    items(luces) { luz ->
+                        LightCard(
+                            luz = luz,
+                            onToggle = { toggleLuz(luz) },
+                            onIntensidadChange = { nueva -> updateIntensidad(luz, nueva) },
+                            onClick = { navController.navigate("edit_schedule/${luz.id}") }
+                        )
+                    }
+                }
+            }
+
+            // Bottom Navigation
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Home, contentDescription = "Mi casa", tint = SipaGold)
+                    Text("Mi casa", fontSize = 12.sp, color = SipaGold)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { navController.navigate("history") }
+                ) {
+                    Icon(Icons.Default.DateRange, contentDescription = "Historial", tint = SipaTextLight)
+                    Text("Historial", fontSize = 12.sp, color = SipaTextLight)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { navController.navigate("settings") }
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextLight)
+                    Text("Ajustes", fontSize = 12.sp, color = SipaTextLight)
                 }
             }
         }
 
-        // Bottom Navigation
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            horizontalArrangement = Arrangement.SpaceAround
+        // 🔥 NUEVO: Botón Flotante para añadir más luces
+        FloatingActionButton(
+            onClick = { navController.navigate("add_lights") },
+            containerColor = SipaGold,
+            contentColor = SipaWhite,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 80.dp) // Lo subimos un poco para que no choque con la barra de navegación
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Home, contentDescription = "Mi casa", tint = SipaGold)
-                Text("Mi casa", fontSize = 12.sp, color = SipaGold)
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { navController.navigate("history") }
-            ) {
-                Icon(Icons.Default.DateRange, contentDescription = "Historial", tint = SipaTextLight)
-                Text("Historial", fontSize = 12.sp, color = SipaTextLight)
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { navController.navigate("settings") }
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = SipaTextLight)
-                Text("Ajustes", fontSize = 12.sp, color = SipaTextLight)
-            }
+            Icon(Icons.Default.Add, contentDescription = "Añadir luces")
         }
     }
 }
@@ -242,7 +246,7 @@ fun HomeScreen(navController: NavController) {
 fun LightCard(
     luz: Luz,
     onToggle: () -> Unit,
-    onIntensidadChange: (Int) -> Unit, // 🔥 NUEVO
+    onIntensidadChange: (Int) -> Unit,
     onClick: () -> Unit
 ) {
     Card(
@@ -288,7 +292,6 @@ fun LightCard(
                 trackColor = SipaWhite
             )
 
-            // 🔥 NUEVO: Slider para controlar la intensidad desde el Home
             if (luz.encendida) {
                 Slider(
                     value = luz.intensidad.toFloat(),

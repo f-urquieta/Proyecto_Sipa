@@ -37,53 +37,78 @@ fun AddLightsScreen(navController: NavController) {
     val context = LocalContext.current
 
     var houseId by remember { mutableStateOf<String?>(null) }
-    var cargandoHouseId by remember { mutableStateOf(true) }
 
-    val MAX_LUCES = 6
+    // 🔥 NUEVO: Estado para guardar los IDs de las luces que ya están en la casa
+    var lucesExistentes by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    // Estados de carga
+    var cargandoDatos by remember { mutableStateOf(true) }
     var buscando by remember { mutableStateOf(true) }
+
     var dispositivosEncontrados by remember { mutableStateOf<List<Dispositivo>>(emptyList()) }
     var seleccionados by remember { mutableStateOf<Set<String>>(emptySet()) }
     var guardando by remember { mutableStateOf(false) }
 
-    // Obtener el houseId del usuario
+    val MAX_LUCES = 6
+
+    // 🔥 NUEVO: Obtener el houseId y las luces que ya están guardadas
     LaunchedEffect(Unit) {
         val uid = auth.currentUser?.uid
         if (uid != null) {
             db.collection("users").document(uid).get()
-                .addOnSuccessListener { document ->
-                    houseId = document.getString("houseId")
-                    cargandoHouseId = false
+                .addOnSuccessListener { userDoc ->
+                    val hId = userDoc.getString("houseId")
+                    houseId = hId
+
+                    if (hId != null) {
+                        // Consultamos las luces actuales de la casa
+                        db.collection("houses").document(hId)
+                            .collection("lights").get()
+                            .addOnSuccessListener { snapshot ->
+                                // Guardamos los IDs en un Set para búsquedas rápidas
+                                lucesExistentes = snapshot.documents.map { it.id }.toSet()
+                                cargandoDatos = false
+                            }
+                            .addOnFailureListener {
+                                cargandoDatos = false
+                            }
+                    } else {
+                        cargandoDatos = false
+                    }
                 }
                 .addOnFailureListener {
-                    cargandoHouseId = false
+                    cargandoDatos = false
                 }
         } else {
-            cargandoHouseId = false
+            cargandoDatos = false
         }
     }
 
-    // Simulamos la búsqueda de dispositivos WiFi
-    LaunchedEffect(Unit) {
-        delay(2000)
-        dispositivosEncontrados = listOf(
-            Dispositivo("lampara_aux", "Lámpara auxiliar", "Sala · señal excelente", 70),
-            Dispositivo("luz_lectura", "Luz de lectura", "Dormitorio · señal buena", 50),
-            Dispositivo("tira_led", "Tira LED", "Sala · señal excelente", 100),
-            Dispositivo("bombillo_cocina", "Bombillo cocina", "Cocina · señal regular", 80),
-            Dispositivo("lampara_pie", "Lámpara de pie", "Sala · señal buena", 65),
-            Dispositivo("luz_nocturna", "Luz nocturna", "Dormitorio · señal excelente", 30)
-        )
-        buscando = false
+    // 🔥 NUEVO: Simulamos la búsqueda pero filtramos las que ya existen
+    LaunchedEffect(houseId, lucesExistentes, cargandoDatos) {
+        if (houseId != null && !cargandoDatos) {
+            delay(1500) // Simulamos tiempo de búsqueda WiFi
+
+            val todosLosDispositivos = listOf(
+                Dispositivo("lampara_aux", "Lámpara auxiliar", "Sala · señal excelente", 70),
+                Dispositivo("luz_lectura", "Luz de lectura", "Dormitorio · señal buena", 50),
+                Dispositivo("tira_led", "Tira LED", "Sala · señal excelente", 100),
+                Dispositivo("bombillo_cocina", "Bombillo cocina", "Cocina · señal regular", 80),
+                Dispositivo("lampara_pie", "Lámpara de pie", "Sala · señal buena", 65),
+                Dispositivo("luz_nocturna", "Luz nocturna", "Dormitorio · señal excelente", 30)
+            )
+
+            // Filtramos: Solo mostramos los que NO estén en el Set de lucesExistentes
+            dispositivosEncontrados = todosLosDispositivos.filterNot {
+                lucesExistentes.contains(it.id)
+            }
+            buscando = false
+        }
     }
 
-    // 🔥 FUNCIÓN SIMPLIFICADA: Guardar directamente sin PIN
     fun conectarLuces() {
         val currentHouseId = houseId
-        if (currentHouseId == null) {
-            Toast.makeText(context, "Error: No se encontró la casa", Toast.LENGTH_SHORT).show()
-            return
-        }
+        if (currentHouseId == null) return
 
         guardando = true
         val uid = auth.currentUser?.uid
@@ -108,7 +133,7 @@ fun AddLightsScreen(navController: NavController) {
                 batch.set(historyRef, mapOf(
                     "action" to "luz_vinculada",
                     "lightId" to luz.id,
-                    "lightName" to luz.nombre, // Guardamos el nombre aquí también
+                    "lightName" to luz.nombre,
                     "oldValue" to "",
                     "newValue" to luz.nombre,
                     "valueType" to "string",
@@ -128,14 +153,13 @@ fun AddLightsScreen(navController: NavController) {
         }
     }
 
-    if (cargandoHouseId) {
+    if (cargandoDatos) {
         Box(modifier = Modifier.fillMaxSize().background(SipaBackground), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = SipaGold)
         }
         return
     }
 
-    // --- INTERFAZ PRINCIPAL ---
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -164,11 +188,18 @@ fun AddLightsScreen(navController: NavController) {
                 Text("Buscando dispositivos en la red WiFi...", color = SipaTextLight, fontSize = 14.sp)
             }
         } else {
-            Text(
-                "${dispositivosEncontrados.size} luces encontradas (Máx. $MAX_LUCES)",
-                fontWeight = FontWeight.Bold,
-                color = SipaTextDark
-            )
+            // 🔥 NUEVO: Si la lista está vacía porque ya agregaste todas
+            if (dispositivosEncontrados.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("Todas las luces disponibles ya están conectadas.", color = SipaTextLight, fontSize = 14.sp)
+                }
+            } else {
+                Text(
+                    "${dispositivosEncontrados.size} luces nuevas encontradas (Máx. $MAX_LUCES)",
+                    fontWeight = FontWeight.Bold,
+                    color = SipaTextDark
+                )
+            }
         }
 
         LazyColumn(modifier = Modifier.weight(1f)) {
@@ -185,11 +216,7 @@ fun AddLightsScreen(navController: NavController) {
                                 if (seleccionados.size < MAX_LUCES) {
                                     seleccionados = seleccionados + disp.id
                                 } else {
-                                    Toast.makeText(
-                                        context,
-                                        "Solo puedes seleccionar hasta $MAX_LUCES luces",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    Toast.makeText(context, "Solo puedes seleccionar hasta $MAX_LUCES luces", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
@@ -223,7 +250,6 @@ fun AddLightsScreen(navController: NavController) {
             }
         }
 
-        // 🔥 BOTÓN SIMPLIFICADO: Llama directamente a conectarLuces()
         Button(
             onClick = {
                 if (seleccionados.isEmpty()) {
@@ -234,7 +260,7 @@ fun AddLightsScreen(navController: NavController) {
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             colors = ButtonDefaults.buttonColors(containerColor = SipaGold),
-            enabled = !guardando && !buscando
+            enabled = !guardando && !buscando && dispositivosEncontrados.isNotEmpty()
         ) {
             if (guardando) {
                 CircularProgressIndicator(color = SipaWhite, modifier = Modifier.size(24.dp))

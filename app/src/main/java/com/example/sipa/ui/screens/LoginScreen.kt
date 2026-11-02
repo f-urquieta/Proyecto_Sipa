@@ -1,6 +1,5 @@
 package com.example.sipa.ui.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,21 +15,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.sipa.ui.theme.*
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.firestore
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(navController: NavController) {
-    // Inicializamos Firebase
-    val auth = Firebase.auth
-    val db = Firebase.firestore
+    val auth = FirebaseAuth.getInstance()
+    val db = FirebaseFirestore.getInstance()
     val context = LocalContext.current
 
-    // Estados para los campos
     var correo by remember { mutableStateOf("") }
     var contrasena by remember { mutableStateOf("") }
+
+    // 🔥 NUEVO: Estados para manejar los errores visuales
+    var correoError by remember { mutableStateOf<String?>(null) }
+    var contrasenaError by remember { mutableStateOf<String?>(null) }
+    var mensajeErrorGeneral by remember { mutableStateOf<String?>(null) }
+
     var isLoading by remember { mutableStateOf(false) }
 
     Column(
@@ -47,89 +52,94 @@ fun LoginScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        Text(
-            "Iniciar sesión",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = SipaTextDark,
-            modifier = Modifier.align(Alignment.Start)
-        )
-        Text(
-            "Vuelve a tus luces y horarios.",
-            color = SipaTextLight,
-            modifier = Modifier.align(Alignment.Start)
-        )
+        Text("Iniciar sesión", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = SipaTextDark, modifier = Modifier.align(Alignment.Start))
+        Text("Vuelve a tus luces y horarios.", color = SipaTextLight, modifier = Modifier.align(Alignment.Start))
 
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedTextField(
             value = correo,
-            onValueChange = { correo = it },
+            onValueChange = {
+                correo = it
+                correoError = null // Limpiamos el error al escribir
+                mensajeErrorGeneral = null
+            },
             label = { Text("Correo") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = contrasena,
-            onValueChange = { contrasena = it },
-            label = { Text("Contraseña") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            isError = correoError != null, // 🔥 Pinta el borde de rojo
+            supportingText = { if (correoError != null) Text(correoError!!) } // 🔥 Muestra el texto debajo
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            "¿Olvidaste tu contraseña?",
-            color = SipaGold,
-            fontSize = 12.sp,
-            modifier = Modifier.align(Alignment.End)
+        OutlinedTextField(
+            value = contrasena,
+            onValueChange = {
+                contrasena = it
+                contrasenaError = null
+                mensajeErrorGeneral = null
+            },
+            label = { Text("Contraseña") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+            isError = contrasenaError != null,
+            supportingText = { if (contrasenaError != null) Text(contrasenaError!!) }
         )
+
+        // 🔥 NUEVO: Mensaje de error general (ej. contraseña incorrecta)
+        if (mensajeErrorGeneral != null) {
+            Text(
+                text = mensajeErrorGeneral!!,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text("¿Olvidaste tu contraseña?", color = SipaGold, fontSize = 12.sp, modifier = Modifier.align(Alignment.End))
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
-                if (correo.isBlank() || contrasena.isBlank()) {
-                    Toast.makeText(context, "Por favor, rellena todos los campos", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
+                // Validaciones locales
+                correoError = if (correo.isBlank()) "El correo es obligatorio" else null
+                contrasenaError = if (contrasena.isBlank()) "La contraseña es obligatoria" else null
+
+                if (correoError != null || contrasenaError != null) return@Button
+
                 isLoading = true
-                auth.signInWithEmailAndPassword(correo, contrasena)
+                mensajeErrorGeneral = null
+
+                auth.signInWithEmailAndPassword(correo.trim(), contrasena)
                     .addOnCompleteListener { task ->
                         if (task.isSuccessful) {
                             val uid = auth.currentUser?.uid
                             if (uid != null) {
-                                // ✅ Consultamos el documento del usuario en Firestore
                                 db.collection("users").document(uid).get()
                                     .addOnSuccessListener { document ->
                                         isLoading = false
                                         if (document.exists() && document.contains("houseId")) {
-                                            // El usuario ya tiene casa → ir al Home
-                                            navController.navigate("home") {
-                                                popUpTo("login") { inclusive = true }
-                                            }
+                                            navController.navigate("home") { popUpTo("login") { inclusive = true } }
                                         } else {
-                                            // El usuario no tiene casa → ir a crear/unirse a casa
-                                            navController.navigate("houses") {
-                                                popUpTo("login") { inclusive = true }
-                                            }
+                                            navController.navigate("houses") { popUpTo("login") { inclusive = true } }
                                         }
                                     }
-                                    .addOnFailureListener { e ->
-                                        isLoading = false
-                                        Toast.makeText(context, "Error al verificar casa: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                            } else {
-                                isLoading = false
-                                Toast.makeText(context, "Error: UID no disponible", Toast.LENGTH_LONG).show()
                             }
                         } else {
                             isLoading = false
-                            Toast.makeText(context, "Error: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                            // 🔥 NUEVO: Traducir los errores de Firebase a mensajes amigables
+                            val exception = task.exception
+                            mensajeErrorGeneral = when (exception) {
+                                is FirebaseAuthInvalidCredentialsException -> "Correo o contraseña incorrectos."
+                                is FirebaseAuthInvalidUserException -> "No existe una cuenta con este correo."
+                                is FirebaseNetworkException -> "Error de conexión. Revisa tu internet."
+                                else -> "Error al iniciar sesión: ${exception?.message}"
+                            }
                         }
                     }
             },
